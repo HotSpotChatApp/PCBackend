@@ -1,23 +1,37 @@
 import redisClient from '../redis/client.js';
 
+// Helper function to get filtered active users (only idle users)
+const getFilteredActiveUsers = async () => {
+    try {
+        const activeUsersSet = await redisClient.sMembers('active_users');
+        const usersList = await Promise.all(
+            activeUsersSet.map(async (id) => {
+                const userData = await redisClient.hGetAll(`user:${id}`);
+                return {
+                    userId: id,
+                    socketId: userData.socketId || '',
+                    displayName: userData.displayName || 'Unknown',
+                    status: userData.status || 'idle',
+                };
+            })
+        );
+        // Filter to show only idle users (exclude users in calls or calling)
+        return usersList.filter(user => user.status === 'idle');
+    } catch (error) {
+        console.error('Error getting filtered active users:', error);
+        return [];
+    }
+};
+
 export const handlePresence = (io, socket) => {
-    // Send initial active users list to newly connected user
+    // Send initial active users list (filtered - only idle) to newly connected user
     socket.on('get-active-users', async (callback) => {
         try {
-            const activeUsersSet = await redisClient.sMembers('active_users');
-            const activeUsersList = await Promise.all(
-                activeUsersSet.map(async (id) => {
-                    const userData = await redisClient.hGetAll(`user:${id}`);
-                    return {
-                        userId: id,
-                        socketId: userData.socketId || '',
-                        displayName: userData.displayName || 'Unknown',
-                        status: userData.status || 'idle',
-                    };
-                })
-            );
-            callback(activeUsersList);
-            console.log('📤 Sent active users list to client:', activeUsersList);
+            const filteredUsers = await getFilteredActiveUsers();
+            // Also filter out the current user from their own list
+            const usersForClient = filteredUsers.filter(u => u.userId !== socket.auth?.userId);
+            callback(usersForClient);
+            console.log(`📤 Sent ${usersForClient.length} active users to ${socket.auth?.displayName}:`, usersForClient);
         } catch (error) {
             console.error('Error getting active users:', error);
             callback([]);
@@ -39,25 +53,15 @@ export const handlePresence = (io, socket) => {
                 timestamp: Date.now().toString(),
             });
 
-            // Broadcast updated active users list
-            const activeUsersSet = await redisClient.sMembers('active_users');
-            const activeUsersList = await Promise.all(
-                activeUsersSet.map(async (id) => {
-                    const userData = await redisClient.hGetAll(`user:${id}`);
-                    return {
-                        userId: id,
-                        socketId: userData.socketId || '',
-                        displayName: userData.displayName || 'Unknown',
-                        status: userData.status || 'idle',
-                    };
-                })
-            );
+            console.log(`✅ ${displayName} came online (${userId})`);
 
+            // Broadcast updated FILTERED active users list (only idle users)
+            const filteredUsers = await getFilteredActiveUsers();
+            
             // Emit to all clients
-            io.emit('active-users:update', activeUsersList);
-            console.log(`📢 Broadcasting ${activeUsersList.length} active users`);
-            console.log('✅ Active users list:', activeUsersList);
-            console.log(`${displayName} came online`);
+            io.emit('active-users:update', filteredUsers);
+            console.log(`📢 Broadcasting ${filteredUsers.length} IDLE users to all clients`);
+            console.log('📋 Idle active users list:', filteredUsers);
         } catch (error) {
             console.error('Error handling user:online:', error);
         }
@@ -67,6 +71,7 @@ export const handlePresence = (io, socket) => {
         try {
             const userId = socket.auth.userId;
             const userData = await redisClient.hGetAll(`user:${userId}`);
+            const displayName = userData?.displayName || 'Unknown';
 
             // Remove from active users
             await redisClient.sRem('active_users', userId);
@@ -76,22 +81,12 @@ export const handlePresence = (io, socket) => {
             await redisClient.del(`incoming:${userId}`);
             await redisClient.del(`outgoing:${userId}`);
 
-            // Broadcast updated active users list
-            const activeUsersSet = await redisClient.sMembers('active_users');
-            const activeUsersList = await Promise.all(
-                activeUsersSet.map(async (id) => {
-                    const data = await redisClient.hGetAll(`user:${id}`);
-                    return {
-                        userId: id,
-                        socketId: data.socketId,
-                        displayName: data.displayName || 'Unknown',
-                        status: data.status || 'idle',
-                    };
-                })
-            );
+            console.log(`❌ ${displayName} went offline (${userId})`);
 
-            io.emit('active-users:update', activeUsersList);
-            console.log(`${userData.displayName} went offline`);
+            // Broadcast updated FILTERED active users list (only idle users)
+            const filteredUsers = await getFilteredActiveUsers();
+            io.emit('active-users:update', filteredUsers);
+            console.log(`📢 Broadcasting ${filteredUsers.length} IDLE users after disconnect`);
         } catch (error) {
             console.error('Error handling disconnect:', error);
         }

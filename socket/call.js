@@ -1,6 +1,29 @@
 import redisClient from '../redis/client.js';
 import { v4 as uuidv4 } from 'uuid';
 
+// Helper function to get filtered active users (only idle users)
+const getFilteredActiveUsers = async () => {
+    try {
+        const activeUsersSet = await redisClient.sMembers('active_users');
+        const usersList = await Promise.all(
+            activeUsersSet.map(async (id) => {
+                const userData = await redisClient.hGetAll(`user:${id}`);
+                return {
+                    userId: id,
+                    socketId: userData.socketId || '',
+                    displayName: userData.displayName || 'Unknown',
+                    status: userData.status || 'idle',
+                };
+            })
+        );
+        // Filter to show only idle users (exclude users in calls or calling)
+        return usersList.filter(user => user.status === 'idle');
+    } catch (error) {
+        console.error('Error getting filtered active users:', error);
+        return [];
+    }
+};
+
 export const handleCallRequests = (io, socket) => {
     socket.on('call:request', async (data) => {
         try {
@@ -32,22 +55,12 @@ export const handleCallRequests = (io, socket) => {
             await redisClient.hSet(`user:${callerId}`, 'status', 'calling');
             await redisClient.hSet(`user:${targetUserId}`, 'status', 'calling');
 
-            // Broadcast updated active users
-            const activeUsersSet = await redisClient.sMembers('active_users');
-            const activeUsersList = await Promise.all(
-                activeUsersSet.map(async (id) => {
-                    const userData = await redisClient.hGetAll(`user:${id}`);
-                    return {
-                        userId: id,
-                        socketId: userData.socketId,
-                        displayName: userData.displayName || 'Unknown',
-                        status: userData.status || 'idle',
-                    };
-                })
-            );
+            console.log(`📞 Call request from ${callerName} to ${calleeData.displayName}`);
 
-            io.emit('active-users:update', activeUsersList);
-            console.log(`Call request from ${callerName} to ${calleeData.displayName}`);
+            // Broadcast updated FILTERED active users (only idle - removes the calling users)
+            const filteredUsers = await getFilteredActiveUsers();
+            io.emit('active-users:update', filteredUsers);
+            console.log(`📢 Broadcasting ${filteredUsers.length} IDLE users (call request initiated)`);
         } catch (error) {
             console.error('Error handling call:request:', error);
         }
@@ -103,22 +116,11 @@ export const handleCallRequests = (io, socket) => {
                 });
             }
 
-            // Broadcast updated active users
-            const activeUsersSet = await redisClient.sMembers('active_users');
-            const activeUsersList = await Promise.all(
-                activeUsersSet.map(async (id) => {
-                    const userData = await redisClient.hGetAll(`user:${id}`);
-                    return {
-                        userId: id,
-                        socketId: userData.socketId,
-                        displayName: userData.displayName || 'Unknown',
-                        status: userData.status || 'idle',
-                    };
-                })
-            );
-
-            io.emit('active-users:update', activeUsersList);
-            console.log(`Call ${callId} established between ${callerData.displayName} and ${calleeName}`);
+            // Broadcast updated FILTERED active users (only idle - removes the in-call users)
+            const filteredUsers = await getFilteredActiveUsers();
+            io.emit('active-users:update', filteredUsers);
+            console.log(`🎥 Call ${callId} established between ${callerData.displayName} and ${calleeName}`);
+            console.log(`📢 Broadcasting ${filteredUsers.length} IDLE users (call accepted)`);
         } catch (error) {
             console.error('Error handling call:accept:', error);
         }
@@ -148,22 +150,11 @@ export const handleCallRequests = (io, socket) => {
                 });
             }
 
-            // Broadcast updated active users
-            const activeUsersSet = await redisClient.sMembers('active_users');
-            const activeUsersList = await Promise.all(
-                activeUsersSet.map(async (id) => {
-                    const userData = await redisClient.hGetAll(`user:${id}`);
-                    return {
-                        userId: id,
-                        socketId: userData.socketId,
-                        displayName: userData.displayName || 'Unknown',
-                        status: userData.status || 'idle',
-                    };
-                })
-            );
-
-            io.emit('active-users:update', activeUsersList);
-            console.log(`Call rejected from ${calleeId} to ${callerId}`);
+            // Broadcast updated FILTERED active users (only idle - resets rejected users back to idle)
+            const filteredUsers = await getFilteredActiveUsers();
+            io.emit('active-users:update', filteredUsers);
+            console.log(`❌ Call rejected from ${calleeId} to ${callerId}`);
+            console.log(`📢 Broadcasting ${filteredUsers.length} IDLE users (call rejected)`);
         } catch (error) {
             console.error('Error handling call:reject:', error);
         }
@@ -196,22 +187,11 @@ export const handleCallRequests = (io, socket) => {
                 otherSocket.emit('call:end');
             }
 
-            // Broadcast updated active users
-            const activeUsersSet = await redisClient.sMembers('active_users');
-            const activeUsersList = await Promise.all(
-                activeUsersSet.map(async (id) => {
-                    const userData = await redisClient.hGetAll(`user:${id}`);
-                    return {
-                        userId: id,
-                        socketId: userData.socketId,
-                        displayName: userData.displayName || 'Unknown',
-                        status: userData.status || 'idle',
-                    };
-                })
-            );
-
-            io.emit('active-users:update', activeUsersList);
-            console.log(`Call ${callId} ended`);
+            // Broadcast updated FILTERED active users (only idle - restores users to active list)
+            const filteredUsers = await getFilteredActiveUsers();
+            io.emit('active-users:update', filteredUsers);
+            console.log(`📵 Call ${callId} ended`);
+            console.log(`📢 Broadcasting ${filteredUsers.length} IDLE users (call ended - users back to active list)`);
         } catch (error) {
             console.error('Error handling call:end:', error);
         }
