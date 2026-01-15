@@ -13,37 +13,37 @@ dotenv.config();
 const app = express();
 const server = createServer(app);
 const io = new SocketIOServer(server, {
-  cors: {
-    origin: (origin, callback) => {
-      const allowedOrigins = [
-        'http://localhost:5173',
-        'http://localhost:3000',
-        process.env.FRONTEND_URL,
-        'https://pcfrontend.onrender.com'
-      ];
-      
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        // Remove trailing slashes and try again
-        const originWithoutSlash = origin.replace(/\/$/, '');
-        if (allowedOrigins.includes(originWithoutSlash)) {
-          callback(null, true);
-        } else {
-          console.warn(`❌ CORS rejected origin: ${origin}`);
-          callback(new Error('CORS not allowed'), false);
-        }
-      }
+    cors: {
+        origin: (origin, callback) => {
+            const allowedOrigins = [
+                'http://localhost:5173',
+                'http://localhost:3000',
+                process.env.FRONTEND_URL,
+                'https://pcfrontend.onrender.com'
+            ];
+
+            // Allow requests with no origin (like mobile apps or curl requests)
+            if (!origin || allowedOrigins.includes(origin)) {
+                callback(null, true);
+            } else {
+                // Remove trailing slashes and try again
+                const originWithoutSlash = origin.replace(/\/$/, '');
+                if (allowedOrigins.includes(originWithoutSlash)) {
+                    callback(null, true);
+                } else {
+                    console.warn(`❌ CORS rejected origin: ${origin}`);
+                    callback(new Error('CORS not allowed'), false);
+                }
+            }
+        },
+        methods: ['GET', 'POST'],
+        credentials: true,
+        allowEIO3: true,
     },
-    methods: ['GET', 'POST'],
-    credentials: true,
-    allowEIO3: true,
-  },
-  transports: ['websocket', 'polling'],
-  maxHttpBufferSize: 1e6,
-  pingInterval: 25000,
-  pingTimeout: 60000,
+    transports: ['websocket', 'polling'],
+    maxHttpBufferSize: 1e6,
+    pingInterval: 25000,
+    pingTimeout: 60000,
 });
 
 // Middleware
@@ -52,66 +52,66 @@ app.use(express.json());
 
 // HTTP Routes
 app.get('/health', (req, res) => {
-  console.log('📍 Health check');
-  res.json({ 
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
+    console.log('📍 Health check');
+    res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
 });
 
 // Socket.IO Middleware
 io.use((socket, next) => {
-  console.log('🔐 Authenticating socket connection...');
-  authenticateSocket(socket, next);
+    console.log('🔐 Authenticating socket connection...');
+    authenticateSocket(socket, next);
 });
 
 // Socket.IO Event Handlers
 io.on('connection', (socket) => {
-  console.log(`✅ User connected: ${socket.auth?.userId} (Socket: ${socket.id})`);
-  console.log(`📊 Total connected users: ${io.engine.clientsCount}`);
-
-  // Emit user:online
-  socket.emit('user:online');
-
-  // Register event handlers
-  handlePresence(io, socket);
-  handleCallRequests(io, socket);
-  handleWebRTC(io, socket);
-
-  socket.on('error', (error) => {
-    console.error(`❌ Socket error for ${socket.auth?.userId}:`, error);
-  });
-
-  socket.on('disconnect', (reason) => {
-    console.log(`❌ User disconnected: ${socket.auth?.userId} (Reason: ${reason})`);
+    console.log(`✅ User connected: ${socket.auth?.userId} (Socket: ${socket.id})`);
     console.log(`📊 Total connected users: ${io.engine.clientsCount}`);
-  });
+
+    // Emit user:online
+    socket.emit('user:online');
+
+    // Register event handlers
+    handlePresence(io, socket);
+    handleCallRequests(io, socket);
+    handleWebRTC(io, socket);
+
+    socket.on('error', (error) => {
+        console.error(`❌ Socket error for ${socket.auth?.userId}:`, error);
+    });
+
+    socket.on('disconnect', (reason) => {
+        console.log(`❌ User disconnected: ${socket.auth?.userId} (Reason: ${reason})`);
+        console.log(`📊 Total connected users: ${io.engine.clientsCount}`);
+    });
 });
 
 // Error handling for Socket.IO
 io.on('error', (error) => {
-  console.error('❌ Socket.IO error:', error);
+    console.error('❌ Socket.IO error:', error);
 });
 
 // Server Startup
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`\n🚀 PeerConnect server running on port ${PORT}`);
-  console.log(`📍 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
-  console.log(`📍 Redis URL: ${process.env.REDIS_URL ? '✅ Configured' : '❌ Not configured'}`);
-  console.log(`🔐 Firebase: ${process.env.FIREBASE_PROJECT_ID ? '✅ Configured' : '❌ Not configured'}\n`);
+    console.log(`\n🚀 PeerConnect server running on port ${PORT}`);
+    console.log(`📍 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:5173'}`);
+    console.log(`📍 Redis URL: ${process.env.REDIS_URL ? '✅ Configured' : '❌ Not configured'}`);
+    console.log(`🔐 Firebase: ${process.env.FIREBASE_PROJECT_ID ? '✅ Configured' : '❌ Not configured'}\n`);
 });
 
 // Graceful Shutdown
 process.on('SIGINT', () => {
-  console.log('\n\n🛑 Shutting down gracefully...');
-  server.close(() => {
-    console.log('✅ Server closed');
-    process.exit(0);
-  });
+    console.log('\n\n🛑 Shutting down gracefully...');
+    server.close(() => {
+        console.log('✅ Server closed');
+        process.exit(0);
+    });
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
+    console.error('❌ Uncaught Exception:', error);
 });
