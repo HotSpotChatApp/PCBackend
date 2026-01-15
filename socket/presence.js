@@ -38,24 +38,55 @@ export const handlePresence = (io, socket) => {
         }
     });
 
-    socket.on('user:online', async () => {
+    // NEW: Handle user setting themselves as active (toggle button)
+    socket.on('user:set-active', async (isActive) => {
         try {
             const { userId, displayName } = socket.auth;
 
-            // Add to active users set
-            await redisClient.sAdd('active_users', userId);
+            if (isActive) {
+                // Add to active users set
+                await redisClient.sAdd('active_users', userId);
+                console.log(`🟢 ${displayName} set themselves ACTIVE (${userId})`);
+            } else {
+                // Remove from active users set
+                await redisClient.sRem('active_users', userId);
+                console.log(`⚪ ${displayName} set themselves INACTIVE (${userId})`);
+            }
 
-            // Store user metadata
+            // Store/update user metadata
             await redisClient.hSet(`user:${userId}`, {
                 socketId: socket.id,
                 displayName,
+                isActive: isActive.toString(),
                 status: 'idle',
                 timestamp: Date.now().toString(),
             });
 
-            console.log(`✅ ${displayName} came online (${userId})`);
+            // Broadcast updated active users list to ALL clients
+            const filteredUsers = await getFilteredActiveUsers();
+            io.emit('active-users:update', filteredUsers);
+            console.log(`📢 Broadcasting ${filteredUsers.length} active users (user toggled)`);
+        } catch (error) {
+            console.error('Error setting user active:', error);
+        }
+    });
 
-            // Broadcast updated FILTERED active users list (only idle users)
+    socket.on('user:online', async () => {
+        try {
+            const { userId, displayName } = socket.auth;
+
+            // Store user metadata (but don't add to active_users yet - wait for toggle button)
+            await redisClient.hSet(`user:${userId}`, {
+                socketId: socket.id,
+                displayName,
+                isActive: 'false',  // Default to inactive
+                status: 'idle',
+                timestamp: Date.now().toString(),
+            });
+
+            console.log(`✅ ${displayName} connected (${userId}) - waiting for activation`);
+
+            // Broadcast updated FILTERED active users list (unchanged)
             const filteredUsers = await getFilteredActiveUsers();
 
             // Emit to all clients
