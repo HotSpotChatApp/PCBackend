@@ -57,7 +57,7 @@ export const handlePresence = (io, socket) => {
 
             // Broadcast updated FILTERED active users list (only idle users)
             const filteredUsers = await getFilteredActiveUsers();
-            
+
             // Emit to all clients
             io.emit('active-users:update', filteredUsers);
             console.log(`📢 Broadcasting ${filteredUsers.length} IDLE users to all clients`);

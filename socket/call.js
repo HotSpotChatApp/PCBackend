@@ -25,6 +25,52 @@ const getFilteredActiveUsers = async () => {
 };
 
 export const handleCallRequests = (io, socket) => {
+    // Get incoming requests for current user
+    socket.on('get-incoming-requests', async (callback) => {
+        try {
+            const { userId } = socket.auth;
+            const incomingSet = await redisClient.sMembers(`incoming:${userId}`);
+            const incomingRequests = await Promise.all(
+                incomingSet.map(async (callerId) => {
+                    const callerData = await redisClient.hGetAll(`user:${callerId}`);
+                    return {
+                        userId: callerId,
+                        displayName: callerData.displayName || 'Unknown',
+                        socketId: callerData.socketId || '',
+                    };
+                })
+            );
+            callback(incomingRequests);
+            console.log(`📤 Sent ${incomingRequests.length} incoming requests to ${socket.auth?.displayName}`);
+        } catch (error) {
+            console.error('Error getting incoming requests:', error);
+            callback([]);
+        }
+    });
+
+    // Get outgoing requests for current user
+    socket.on('get-outgoing-requests', async (callback) => {
+        try {
+            const { userId } = socket.auth;
+            const outgoingSet = await redisClient.sMembers(`outgoing:${userId}`);
+            const outgoingRequests = await Promise.all(
+                outgoingSet.map(async (calleeId) => {
+                    const calleeData = await redisClient.hGetAll(`user:${calleeId}`);
+                    return {
+                        userId: calleeId,
+                        displayName: calleeData.displayName || 'Unknown',
+                        socketId: calleeData.socketId || '',
+                    };
+                })
+            );
+            callback(outgoingRequests);
+            console.log(`📤 Sent ${outgoingRequests.length} outgoing requests to ${socket.auth?.displayName}`);
+        } catch (error) {
+            console.error('Error getting outgoing requests:', error);
+            callback([]);
+        }
+    });
+
     socket.on('call:request', async (data) => {
         try {
             const { userId: callerId, displayName: callerName } = socket.auth;
@@ -49,6 +95,35 @@ export const handleCallRequests = (io, socket) => {
                         displayName: callerName,
                     },
                 });
+
+                // Also emit to refresh incoming requests
+                const incomingSet = await redisClient.sMembers(`incoming:${targetUserId}`);
+                const incomingRequests = await Promise.all(
+                    incomingSet.map(async (cId) => {
+                        const cData = await redisClient.hGetAll(`user:${cId}`);
+                        return {
+                            userId: cId,
+                            displayName: cData.displayName || 'Unknown',
+                        };
+                    })
+                );
+                calleeSocket.emit('incoming-requests:update', incomingRequests);
+            }
+
+            // Update caller's outgoing requests
+            const callerSocket = io.sockets.sockets.get(callerData.socketId);
+            if (callerSocket) {
+                const outgoingSet = await redisClient.sMembers(`outgoing:${callerId}`);
+                const outgoingRequests = await Promise.all(
+                    outgoingSet.map(async (ceeId) => {
+                        const ceeData = await redisClient.hGetAll(`user:${ceeId}`);
+                        return {
+                            userId: ceeId,
+                            displayName: ceeData.displayName || 'Unknown',
+                        };
+                    })
+                );
+                callerSocket.emit('outgoing-requests:update', outgoingRequests);
             }
 
             // Update status to calling
@@ -105,6 +180,9 @@ export const handleCallRequests = (io, socket) => {
                     calleeName,
                     initiator: true,
                 });
+
+                // Clear outgoing requests
+                callerSocket.emit('outgoing-requests:update', []);
             }
 
             if (calleeSocket) {
@@ -114,6 +192,9 @@ export const handleCallRequests = (io, socket) => {
                     callerName: callerData.displayName,
                     initiator: false,
                 });
+
+                // Clear incoming requests
+                calleeSocket.emit('incoming-requests:update', []);
             }
 
             // Broadcast updated FILTERED active users (only idle - removes the in-call users)
@@ -148,6 +229,35 @@ export const handleCallRequests = (io, socket) => {
                 callerSocket.emit('call:reject', {
                     calleeId,
                 });
+
+                // Update outgoing requests
+                const outgoingSet = await redisClient.sMembers(`outgoing:${callerId}`);
+                const outgoingRequests = await Promise.all(
+                    outgoingSet.map(async (ceeId) => {
+                        const ceeData = await redisClient.hGetAll(`user:${ceeId}`);
+                        return {
+                            userId: ceeId,
+                            displayName: ceeData.displayName || 'Unknown',
+                        };
+                    })
+                );
+                callerSocket.emit('outgoing-requests:update', outgoingRequests);
+            }
+
+            // Update callee's incoming requests
+            const calleeSocket = io.sockets.sockets.get(socket.id);
+            if (calleeSocket) {
+                const incomingSet = await redisClient.sMembers(`incoming:${calleeId}`);
+                const incomingRequests = await Promise.all(
+                    incomingSet.map(async (cId) => {
+                        const cData = await redisClient.hGetAll(`user:${cId}`);
+                        return {
+                            userId: cId,
+                            displayName: cData.displayName || 'Unknown',
+                        };
+                    })
+                );
+                calleeSocket.emit('incoming-requests:update', incomingRequests);
             }
 
             // Broadcast updated FILTERED active users (only idle - resets rejected users back to idle)
