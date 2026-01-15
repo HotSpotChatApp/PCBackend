@@ -71,13 +71,16 @@ io.on('connection', (socket) => {
     console.log(`✅ User connected: ${socket.auth?.userId} (Socket: ${socket.id})`);
     console.log(`📊 Total connected users: ${io.engine.clientsCount}`);
 
-    // Emit user:online
-    socket.emit('user:online');
-
-    // Register event handlers
+    // Register event handlers FIRST before emitting user:online
     handlePresence(io, socket);
     handleCallRequests(io, socket);
     handleWebRTC(io, socket);
+
+    // Small delay to let frontend set up listeners
+    setTimeout(() => {
+        socket.emit('user:online');
+        console.log(`📤 Emitted user:online to ${socket.auth?.userId}`);
+    }, 100);
 
     socket.on('error', (error) => {
         console.error(`❌ Socket error for ${socket.auth?.userId}:`, error);
