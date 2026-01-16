@@ -275,35 +275,53 @@ export const handleCallRequests = (io, socket) => {
             const { userId } = socket.auth;
             const { callId } = data;
 
+            console.log(`📵 Call end requested - Call ID: ${callId}, User: ${userId}`);
+
             // Get call state
             const callData = await redisClient.hGetAll(`call:${callId}`);
+            if (!callData || !callData.caller) {
+                console.warn('⚠️ Call data not found:', callId);
+                return;
+            }
 
             // Remove call state
             await redisClient.del(`call:${callId}`);
 
             // Determine other user
             const otherUserId = callData.caller === userId ? callData.callee : callData.caller;
+            console.log(`   Caller: ${callData.caller}, Callee: ${callData.callee}, Current: ${userId}`);
+            console.log(`   Other user: ${otherUserId}`);
 
-            // Reset status
+            // Reset status for both users
             await redisClient.hSet(`user:${userId}`, 'status', 'idle');
             await redisClient.hSet(`user:${otherUserId}`, 'status', 'idle');
+            console.log(`   Both users reset to idle status`);
 
-            // Get socket info
+            // Get socket info for other user
             const otherUserData = await redisClient.hGetAll(`user:${otherUserId}`);
-
-            // Notify other user
             const otherSocket = io.sockets.sockets.get(otherUserData.socketId);
+
+            // Notify BOTH users that call has ended
             if (otherSocket) {
+                console.log(`   Sending call:end to other user`);
                 otherSocket.emit('call:end');
+            } else {
+                console.log(`   Other user socket not found: ${otherUserData.socketId}`);
             }
+
+            // Also ensure current user gets the confirmation (important!)
+            console.log(`   Sending call:end to current user (confirmation)`);
+            socket.emit('call:end');
 
             // Broadcast updated FILTERED active users (only idle - restores users to active list)
             const filteredUsers = await getFilteredActiveUsers();
+            console.log(`   Broadcasting active users update: ${filteredUsers.length} idle users`);
             io.emit('active-users:update', filteredUsers);
-            console.log(`📵 Call ${callId} ended`);
+            
+            console.log(`✅ Call ${callId} ended successfully`);
             console.log(`📢 Broadcasting ${filteredUsers.length} IDLE users (call ended - users back to active list)`);
         } catch (error) {
-            console.error('Error handling call:end:', error);
+            console.error('❌ Error handling call:end:', error);
         }
     });
 };
