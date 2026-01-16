@@ -317,7 +317,7 @@ export const handleCallRequests = (io, socket) => {
             const filteredUsers = await getFilteredActiveUsers();
             console.log(`   Broadcasting active users update: ${filteredUsers.length} idle users`);
             io.emit('active-users:update', filteredUsers);
-            
+
             console.log(`✅ Call ${callId} ended successfully`);
             console.log(`📢 Broadcasting ${filteredUsers.length} IDLE users (call ended - users back to active list)`);
         } catch (error) {
