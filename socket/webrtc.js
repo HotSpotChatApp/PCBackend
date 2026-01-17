@@ -62,13 +62,13 @@ export const handleWebRTC = (io, socket) => {
     socket.on('webrtc:ice-candidate', async (data) => {
         try {
             const { callId, candidate } = data;
-            
+
             // ✅ Log received candidate data for debugging
             console.log(`❄️ Received ICE candidate for call ${callId}`);
             console.log(`   Candidate type: ${candidate?.type}`);
             console.log(`   Candidate address: ${candidate?.address}:${candidate?.port}`);
             console.log(`   Full candidate data:`, JSON.stringify(candidate, null, 2));
-            
+
             const callState = await redisClient.hGetAll(`call:${callId}`);
 
             if (!callState) {
@@ -84,7 +84,7 @@ export const handleWebRTC = (io, socket) => {
             const recipientSocket = io.sockets.sockets.get(recipientData.socketId);
             if (recipientSocket) {
                 // ✅ CRITICAL: Pass the complete candidate object, not just the basic properties
-                recipientSocket.emit('webrtc:ice-candidate', { 
+                recipientSocket.emit('webrtc:ice-candidate', {
                     candidate: {
                         candidate: candidate.candidate,
                         sdpMLineIndex: candidate.sdpMLineIndex,
