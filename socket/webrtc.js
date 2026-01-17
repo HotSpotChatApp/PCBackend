@@ -62,6 +62,13 @@ export const handleWebRTC = (io, socket) => {
     socket.on('webrtc:ice-candidate', async (data) => {
         try {
             const { callId, candidate } = data;
+            
+            // ✅ Log received candidate data for debugging
+            console.log(`❄️ Received ICE candidate for call ${callId}`);
+            console.log(`   Candidate type: ${candidate?.type}`);
+            console.log(`   Candidate address: ${candidate?.address}:${candidate?.port}`);
+            console.log(`   Full candidate data:`, JSON.stringify(candidate, null, 2));
+            
             const callState = await redisClient.hGetAll(`call:${callId}`);
 
             if (!callState) {
@@ -76,8 +83,23 @@ export const handleWebRTC = (io, socket) => {
             // Send ICE candidate to recipient
             const recipientSocket = io.sockets.sockets.get(recipientData.socketId);
             if (recipientSocket) {
-                recipientSocket.emit('webrtc:ice-candidate', { candidate });
-                console.log(`❄️ ICE candidate sent to ${recipientData.displayName}`);
+                // ✅ CRITICAL: Pass the complete candidate object, not just the basic properties
+                recipientSocket.emit('webrtc:ice-candidate', { 
+                    candidate: {
+                        candidate: candidate.candidate,
+                        sdpMLineIndex: candidate.sdpMLineIndex,
+                        sdpMid: candidate.sdpMid,
+                        usernameFragment: candidate.usernameFragment,
+                        type: candidate.type,
+                        protocol: candidate.protocol,
+                        address: candidate.address,
+                        port: candidate.port,
+                        priority: candidate.priority,
+                        foundation: candidate.foundation
+                    }
+                });
+                console.log(`✅ ICE candidate forwarded to ${recipientData.displayName}`);
+                console.log(`   Candidate type: ${candidate?.type}, address: ${candidate?.address}:${candidate?.port}`);
             } else {
                 console.error(`❌ Recipient socket not found for ${recipientId}`);
             }
